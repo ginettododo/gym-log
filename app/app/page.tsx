@@ -20,6 +20,8 @@ export default async function AppHomePage() {
       <p>Benvenuto, {user.email}</p>
       <div style={{ display: 'flex', gap: '0.75rem' }}>
         <Link href="/app/settings">Impostazioni</Link>
+        <Link href="/app/programs">Programmi</Link>
+        <Link href="/app/import">Importa CSV</Link>
         <LogoutButton />
       </div>
       <div className="card">

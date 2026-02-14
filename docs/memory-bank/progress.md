@@ -3,6 +3,7 @@
 ## Stato task
 
 - **Task #1 – Scaffold tecnico end-to-end**: **Done**
+- **Task #2 – Program Blocks + Progression Tables + CSV import**: **Done**
 
 ## Consegnato
 
@@ -12,10 +13,11 @@
 - Migrazione SQL con schema minimo + RLS + trigger profilo.
 - IndexedDB (Dexie) per draft locali e coda sync con retry.
 - Pagina `/app/settings` con bottone "Backup ora" su tabella `backups`.
+- Workflow programmi/progressioni con pagine `/app/programs`, `/app/programs/[id]` e import wizard `/app/import`.
+- Import CSV offline-first con validazione, preview ed enqueue mutazioni per sync.
 
 ## Prossimi task atomici
 
-1. Aggiungere modello dati e UI minima per creazione workout session reale offline.
-2. Implementare idempotency tracking server-side (tabella `sync_operations`).
-3. Introdurre test end-to-end (auth redirect, guard, backup flow).
-4. Aggiungere importazione programmi/progressioni da CSV/JSON tabellare.
+3. Workout logging UI + prefill ultima sessione + rest timer.
+4. Sync hardening + conflict strategy + idempotency.
+5. Analytics (PR + charts).
