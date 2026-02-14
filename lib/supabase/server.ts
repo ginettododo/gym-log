@@ -1,8 +1,13 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { env } from '@/lib/env';
+import { createFallbackSupabaseClient } from '@/lib/supabase/fallback';
 
 export async function createClient() {
+  if (!env.supabaseUrl || !env.supabaseAnonKey) {
+    return createFallbackSupabaseClient();
+  }
+
   const cookieStore = await cookies();
 
   return createServerClient(env.supabaseUrl, env.supabaseAnonKey, {
