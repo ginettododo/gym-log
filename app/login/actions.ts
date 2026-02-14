@@ -6,7 +6,19 @@ import { createClient } from '@/lib/supabase/server';
 
 export async function loginWithGoogle() {
   const supabase = await createClient();
-  const origin = (await headers()).get('origin') ?? 'http://localhost:3000';
+  const requestHeaders = await headers();
+  const origin =
+    requestHeaders.get('origin') ??
+    (() => {
+      const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
+
+      if (!host) {
+        return 'http://localhost:3000';
+      }
+
+      const protocol = requestHeaders.get('x-forwarded-proto') ?? 'https';
+      return `${protocol}://${host}`;
+    })();
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
