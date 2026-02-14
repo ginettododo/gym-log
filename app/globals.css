@@ -26,7 +26,7 @@ a {
 }
 
 main {
-  padding: 1.5rem;
+  padding: 1rem;
   max-width: 900px;
   margin: 0 auto;
 }
@@ -56,7 +56,8 @@ button.secondary {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   margin-top: 0.5rem;
   padding: 0.6rem;
@@ -64,4 +65,47 @@ textarea {
   border: 1px solid #64748b;
   background: #0f172a;
   color: #e2e8f0;
+}
+
+.filtersRow {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.tableWrap {
+  overflow-x: auto;
+  margin-top: 0.75rem;
+}
+
+.progressionTable {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 620px;
+}
+
+.progressionTable th,
+.progressionTable td {
+  border: 1px solid #334155;
+  padding: 0.5rem;
+  vertical-align: top;
+}
+
+.progressionTable th {
+  position: sticky;
+  top: 0;
+  background: #0b1220;
+}
+
+.cellCard {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 0.6rem;
+  margin-bottom: 0.5rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.muted {
+  opacity: 0.7;
 }
