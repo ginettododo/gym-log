@@ -12,6 +12,7 @@ function toExerciseRow(exercise: Exercise) {
     name: exercise.name,
     muscle_groups: exercise.muscleGroups,
     equipment: exercise.equipment,
+    default_rest_seconds: exercise.defaultRestSeconds ?? null,
     created_at: exercise.createdAt,
     client_updated_at: exercise.clientUpdatedAt,
   };
@@ -23,6 +24,7 @@ function fromExerciseRow(row: {
   name: string;
   muscle_groups: string[];
   equipment: string;
+  default_rest_seconds: number | null;
   created_at: string;
   client_updated_at: string;
 }): Exercise {
@@ -32,6 +34,7 @@ function fromExerciseRow(row: {
     name: row.name,
     muscleGroups: row.muscle_groups,
     equipment: row.equipment,
+    defaultRestSeconds: row.default_rest_seconds ?? undefined,
     createdAt: row.created_at,
     clientUpdatedAt: row.client_updated_at,
   };
@@ -42,7 +45,7 @@ export async function listExercises(userId: string): Promise<Exercise[]> {
     const supabase = createClient();
     const { data } = await supabase
       .from('exercises')
-      .select('id,user_id,name,muscle_groups,equipment,created_at,client_updated_at')
+      .select('id,user_id,name,muscle_groups,equipment,default_rest_seconds,created_at,client_updated_at')
       .eq('user_id', userId)
       .order('name', { ascending: true });
 
@@ -60,6 +63,7 @@ export async function createExercise(input: {
   name: string;
   muscleGroups?: string[];
   equipment?: string;
+  defaultRestSeconds?: number;
 }): Promise<Exercise> {
   const now = new Date().toISOString();
   const exercise: Exercise = {
@@ -68,6 +72,7 @@ export async function createExercise(input: {
     name: input.name.trim(),
     muscleGroups: input.muscleGroups ?? [],
     equipment: input.equipment ?? '',
+    defaultRestSeconds: input.defaultRestSeconds,
     createdAt: now,
     clientUpdatedAt: now,
   };

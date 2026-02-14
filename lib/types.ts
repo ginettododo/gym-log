@@ -10,8 +10,40 @@ export interface WorkoutSessionDraft {
   id: string;
   userId: string;
   startedAt: string;
+  endedAt?: string;
   notes: string;
+  routineId?: string;
+  status: 'draft' | 'completed';
   updatedAt: string;
+  clientUpdatedAt: string;
+}
+
+export type SetType = 'warmup' | 'working' | 'drop' | 'failure';
+
+export interface WorkoutExerciseDraft {
+  id: string;
+  userId: string;
+  sessionId: string;
+  exerciseId: string;
+  sort: number;
+  notes: string;
+  restSeconds?: number;
+  updatedAt: string;
+  clientUpdatedAt: string;
+}
+
+export interface SetEntryDraft {
+  id: string;
+  userId: string;
+  workoutExerciseId: string;
+  setType: SetType;
+  weight?: number;
+  reps?: number;
+  rpe?: number;
+  rir?: number;
+  isCompleted: boolean;
+  createdAt: string;
+  clientUpdatedAt: string;
 }
 
 export interface SyncMutation {
@@ -32,8 +64,36 @@ export interface Exercise {
   name: string;
   muscleGroups: string[];
   equipment: string;
+  defaultRestSeconds?: number;
   createdAt: string;
   clientUpdatedAt: string;
+}
+
+export interface Routine {
+  id: string;
+  userId: string;
+  name: string;
+  createdAt: string;
+  clientUpdatedAt: string;
+  deletedAt?: string;
+}
+
+export interface RoutineExercise {
+  id: string;
+  userId: string;
+  routineId: string;
+  exerciseId: string;
+  sort: number;
+  notes?: string;
+  createdAt: string;
+  clientUpdatedAt: string;
+  deletedAt?: string;
+}
+
+export interface UserSetting {
+  userId: string;
+  defaultRestSeconds: number;
+  updatedAt: string;
 }
 
 export interface ProgramBlock {
