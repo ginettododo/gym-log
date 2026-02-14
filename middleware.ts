@@ -15,30 +15,38 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return request.cookies.get(name)?.value;
+  try {
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: Record<string, unknown>) {
+          response.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: Record<string, unknown>) {
+          response.cookies.set({ name, value: '', ...options, maxAge: 0 });
+        },
       },
-      set(name: string, value: string, options: Record<string, unknown>) {
-        response.cookies.set({ name, value, ...options });
-      },
-      remove(name: string, options: Record<string, unknown>) {
-        response.cookies.set({ name, value: '', ...options, maxAge: 0 });
-      },
-    },
-  });
+    });
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-  if (request.nextUrl.pathname.startsWith('/app') && !session) {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
+    if (request.nextUrl.pathname.startsWith('/app') && !session) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
 
-  if (request.nextUrl.pathname === '/login' && session) {
-    return NextResponse.redirect(new URL('/app', request.url));
+    if (request.nextUrl.pathname === '/login' && session) {
+      return NextResponse.redirect(new URL('/app', request.url));
+    }
+  } catch (error) {
+    console.error('Middleware auth check failed', error);
+
+    if (request.nextUrl.pathname.startsWith('/app')) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
   }
 
   return response;
