@@ -15,6 +15,7 @@ describe('prefill last time', () => {
       status: 'completed',
       updatedAt: '2026-01-01T11:00:00.000Z',
       clientUpdatedAt: '2026-01-01T11:00:00.000Z',
+      version: 1,
     });
 
     await db.workoutExerciseDrafts.put({
@@ -26,6 +27,7 @@ describe('prefill last time', () => {
       notes: '',
       updatedAt: '2026-01-01T11:00:00.000Z',
       clientUpdatedAt: '2026-01-01T11:00:00.000Z',
+      version: 1,
     });
 
     await db.setEntryDrafts.put({
@@ -37,7 +39,9 @@ describe('prefill last time', () => {
       reps: 5,
       isCompleted: true,
       createdAt: '2026-01-01T10:30:00.000Z',
+      updatedAt: '2026-01-01T10:30:00.000Z',
       clientUpdatedAt: '2026-01-01T10:30:00.000Z',
+      version: 1,
     });
 
     const summary = await getExerciseLastTime({ userId, exerciseId });

@@ -21,6 +21,9 @@ export default async function SettingsPage() {
         <BackupNowButton userId={user.id} />
       </div>
       <p>
+        <Link href="/app/settings/sync">Apri pannello sincronizzazione</Link>
+      </p>
+      <p>
         <Link href="/app">Torna all&apos;area app</Link>
       </p>
     </main>

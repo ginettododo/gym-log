@@ -1,7 +1,8 @@
 'use client';
 
 import { db } from '@/lib/offline/db';
-import { enqueueMutation } from '@/lib/offline/sync';
+import { createIdempotencyKey, enqueueMutation } from '@/lib/offline/sync';
+import { shouldApplyRemoteRecord } from '@/lib/offline/sync-engine';
 import { createClient } from '@/lib/supabase/browser';
 import type { SetEntryDraft, UserSetting, WorkoutExerciseDraft, WorkoutSessionDraft } from '@/lib/types';
 
@@ -12,7 +13,9 @@ function toSessionRow(item: WorkoutSessionDraft) {
     started_at: item.startedAt,
     ended_at: item.endedAt ?? null,
     notes: item.notes,
+    updated_at: item.updatedAt,
     client_updated_at: item.clientUpdatedAt,
+    version: item.version,
   };
 }
 
@@ -24,7 +27,9 @@ function toWorkoutExerciseRow(item: WorkoutExerciseDraft) {
     exercise_id: item.exerciseId,
     sort: item.sort,
     notes: item.notes,
+    updated_at: item.updatedAt,
     client_updated_at: item.clientUpdatedAt,
+    version: item.version,
   };
 }
 
@@ -39,7 +44,9 @@ function toSetRow(item: SetEntryDraft) {
     rpe: item.rpe ?? null,
     rir: item.rir ?? null,
     is_completed: item.isCompleted,
+    updated_at: item.updatedAt,
     client_updated_at: item.clientUpdatedAt,
+    version: item.version,
   };
 }
 
@@ -57,6 +64,7 @@ export async function createWorkoutSessionDraft(input: {
     status: 'draft',
     updatedAt: now,
     clientUpdatedAt: now,
+    version: 1,
   };
 
   await db.workoutSessionDrafts.put(session);
@@ -66,6 +74,7 @@ export async function createWorkoutSessionDraft(input: {
     operation: 'upsert',
     payload: toSessionRow(session),
     idempotencyKey: `workout_session:${session.id}:${session.clientUpdatedAt}`,
+    orderingKey: 10,
   });
 
   return session;
@@ -74,26 +83,40 @@ export async function createWorkoutSessionDraft(input: {
 export async function listRecentSessions(userId: string): Promise<WorkoutSessionDraft[]> {
   if (navigator.onLine) {
     const supabase = createClient();
-    const { data } = await supabase
-      .from('workout_sessions')
-      .select('id,user_id,started_at,ended_at,notes,client_updated_at')
-      .eq('user_id', userId)
-      .order('started_at', { ascending: false })
-      .limit(20);
+    const [dataResult, pending] = await Promise.all([
+      supabase
+        .from('workout_sessions')
+        .select('id,user_id,started_at,ended_at,notes,updated_at,client_updated_at,version')
+        .eq('user_id', userId)
+        .order('started_at', { ascending: false })
+        .limit(20),
+      db.syncMutations.where('userId').equals(userId).and((m) => m.tableName === 'workout_sessions').toArray(),
+    ]);
 
-    if (data) {
-      await db.workoutSessionDrafts.bulkPut(
-        data.map((row) => ({
-          id: row.id,
-          userId: row.user_id,
-          startedAt: row.started_at,
-          endedAt: row.ended_at ?? undefined,
-          notes: row.notes ?? '',
-          status: row.ended_at ? 'completed' : 'draft',
-          updatedAt: row.client_updated_at,
-          clientUpdatedAt: row.client_updated_at,
-        })),
-      );
+    if (dataResult.data) {
+      const pendingIds = new Set(pending.map((item) => item.recordId));
+      for (const row of dataResult.data) {
+        const local = await db.workoutSessionDrafts.get(row.id);
+        if (
+          shouldApplyRemoteRecord({
+            hasPendingEdits: pendingIds.has(row.id),
+            localClientUpdatedAt: local?.clientUpdatedAt,
+            remoteClientUpdatedAt: row.client_updated_at,
+          })
+        ) {
+          await db.workoutSessionDrafts.put({
+            id: row.id,
+            userId: row.user_id,
+            startedAt: row.started_at,
+            endedAt: row.ended_at ?? undefined,
+            notes: row.notes ?? '',
+            status: row.ended_at ? 'completed' : 'draft',
+            updatedAt: row.updated_at ?? row.client_updated_at,
+            clientUpdatedAt: row.client_updated_at,
+            version: row.version ?? 1,
+          });
+        }
+      }
     }
   }
 
@@ -116,6 +139,7 @@ export async function upsertSessionNotes(input: { sessionId: string; notes: stri
     notes: input.notes,
     updatedAt: now,
     clientUpdatedAt: now,
+    version: existing.version + 1,
   };
 
   await db.workoutSessionDrafts.put(updated);
@@ -125,6 +149,7 @@ export async function upsertSessionNotes(input: { sessionId: string; notes: stri
     operation: 'upsert',
     payload: toSessionRow(updated),
     idempotencyKey: `workout_session:${updated.id}:${updated.clientUpdatedAt}`,
+    orderingKey: 10,
   });
 }
 
@@ -140,6 +165,7 @@ export async function finishWorkoutSession(sessionId: string): Promise<void> {
     status: 'completed',
     updatedAt: now,
     clientUpdatedAt: now,
+    version: existing.version + 1,
   };
 
   await db.workoutSessionDrafts.put(updated);
@@ -149,6 +175,7 @@ export async function finishWorkoutSession(sessionId: string): Promise<void> {
     operation: 'upsert',
     payload: toSessionRow(updated),
     idempotencyKey: `workout_session:${updated.id}:${updated.clientUpdatedAt}`,
+    orderingKey: 10,
   });
 }
 
@@ -173,6 +200,7 @@ export async function addExerciseToSession(input: {
     restSeconds: input.restSeconds,
     updatedAt: now,
     clientUpdatedAt: now,
+    version: 1,
   };
 
   const initialSet: SetEntryDraft = {
@@ -184,18 +212,23 @@ export async function addExerciseToSession(input: {
     reps: input.defaultReps,
     isCompleted: false,
     createdAt: now,
+    updatedAt: now,
     clientUpdatedAt: now,
+    version: 1,
   };
 
   await db.workoutExerciseDrafts.put(workoutExercise);
   await db.setEntryDrafts.put(initialSet);
 
+  const transactionGroup = createIdempotencyKey();
   await enqueueMutation({
     userId: input.userId,
     tableName: 'workout_exercises',
     operation: 'upsert',
     payload: toWorkoutExerciseRow(workoutExercise),
     idempotencyKey: `workout_exercise:${workoutExercise.id}:${workoutExercise.clientUpdatedAt}`,
+    transactionGroup,
+    orderingKey: 20,
   });
 
   await enqueueMutation({
@@ -204,6 +237,8 @@ export async function addExerciseToSession(input: {
     operation: 'upsert',
     payload: toSetRow(initialSet),
     idempotencyKey: `set_entry:${initialSet.id}:${initialSet.clientUpdatedAt}`,
+    transactionGroup,
+    orderingKey: 30,
   });
 
   return workoutExercise;
@@ -221,7 +256,9 @@ export async function upsertSetEntry(input: SetEntryDraft): Promise<void> {
   const now = new Date().toISOString();
   const row: SetEntryDraft = {
     ...input,
+    updatedAt: now,
     clientUpdatedAt: now,
+    version: (input.version ?? 0) + 1,
   };
   await db.setEntryDrafts.put(row);
   await enqueueMutation({
@@ -230,6 +267,7 @@ export async function upsertSetEntry(input: SetEntryDraft): Promise<void> {
     operation: 'upsert',
     payload: toSetRow(row),
     idempotencyKey: `set_entry:${row.id}:${row.clientUpdatedAt}`,
+    orderingKey: 30,
   });
 }
 
@@ -239,12 +277,15 @@ export async function appendSetFromPrevious(workoutExerciseId: string): Promise<
   if (!previous) {
     return undefined;
   }
+  const now = new Date().toISOString();
   const clone: SetEntryDraft = {
     ...previous,
     id: crypto.randomUUID(),
     isCompleted: false,
-    createdAt: new Date().toISOString(),
-    clientUpdatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
+    clientUpdatedAt: now,
+    version: 1,
   };
   await upsertSetEntry(clone);
   return clone;
@@ -262,7 +303,9 @@ export async function createEmptySet(input: {
     setType: 'working',
     isCompleted: false,
     createdAt: now,
+    updatedAt: now,
     clientUpdatedAt: now,
+    version: 1,
   };
 
   await upsertSetEntry(set);
@@ -282,6 +325,7 @@ export async function undoLastSet(workoutExerciseId: string): Promise<void> {
     operation: 'delete',
     payload: { id: last.id },
     idempotencyKey: `set_entry:delete:${last.id}:${new Date().toISOString()}`,
+    orderingKey: 40,
   });
 }
 
