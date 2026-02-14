@@ -2,6 +2,7 @@
 
 import { db } from '@/lib/offline/db';
 import { enqueueMutation } from '@/lib/offline/sync';
+import { shouldApplyRemoteRecord } from '@/lib/offline/sync-engine';
 import { createClient } from '@/lib/supabase/browser';
 import type { ProgramBlock, ProgressionActual, ProgressionRow } from '@/lib/types';
 
@@ -12,6 +13,7 @@ function pbToRow(item: ProgramBlock) {
     name: item.name,
     created_at: item.createdAt,
     client_updated_at: item.clientUpdatedAt,
+    version: item.version,
   };
 }
 
@@ -21,6 +23,7 @@ function rowToPb(row: {
   name: string;
   created_at: string;
   client_updated_at: string;
+  version?: number;
 }): ProgramBlock {
   return {
     id: row.id,
@@ -28,6 +31,7 @@ function rowToPb(row: {
     name: row.name,
     createdAt: row.created_at,
     clientUpdatedAt: row.client_updated_at,
+    version: row.version ?? 1,
   };
 }
 
@@ -46,6 +50,7 @@ function prToRow(item: ProgressionRow) {
     notes: item.notes ?? null,
     created_at: item.createdAt,
     client_updated_at: item.clientUpdatedAt,
+    version: item.version,
   };
 }
 
@@ -63,6 +68,7 @@ function rowToPr(row: {
   notes: string | null;
   created_at: string;
   client_updated_at: string;
+  version?: number;
 }): ProgressionRow {
   return {
     id: row.id,
@@ -78,6 +84,7 @@ function rowToPr(row: {
     notes: row.notes ?? undefined,
     createdAt: row.created_at,
     clientUpdatedAt: row.client_updated_at,
+    version: row.version ?? 1,
   };
 }
 
@@ -93,6 +100,7 @@ function paToRow(item: ProgressionActual) {
     notes: item.notes ?? null,
     created_at: item.createdAt,
     client_updated_at: item.clientUpdatedAt,
+    version: item.version,
   };
 }
 
@@ -101,7 +109,7 @@ export async function listProgramBlocks(userId: string): Promise<ProgramBlock[]>
     const supabase = createClient();
     const { data } = await supabase
       .from('program_blocks')
-      .select('id,user_id,name,created_at,client_updated_at')
+      .select('id,user_id,name,created_at,client_updated_at,version')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
@@ -125,6 +133,7 @@ export async function createProgramBlock(input: {
     name: input.name.trim(),
     createdAt: now,
     clientUpdatedAt: now,
+    version: 1,
   };
 
   await db.programBlocks.put(block);
@@ -141,7 +150,12 @@ export async function createProgramBlock(input: {
 
 export async function deleteProgramBlock(input: { userId: string; id: string }): Promise<void> {
   const now = new Date().toISOString();
-  await db.programBlocks.update(input.id, { deletedAt: now, clientUpdatedAt: now });
+  const existing = await db.programBlocks.get(input.id);
+  await db.programBlocks.update(input.id, {
+    deletedAt: now,
+    clientUpdatedAt: now,
+    version: (existing?.version ?? 0) + 1,
+  });
   await enqueueMutation({
     userId: input.userId,
     tableName: 'program_blocks',
@@ -157,16 +171,35 @@ export async function listProgressionRows(input: {
 }): Promise<ProgressionRow[]> {
   if (navigator.onLine) {
     const supabase = createClient();
-    const { data } = await supabase
-      .from('progression_rows')
-      .select(
-        'id,user_id,program_block_id,week,day,exercise_id,target_sets,target_reps,target_load,target_rpe,notes,created_at,client_updated_at',
-      )
-      .eq('user_id', input.userId)
-      .eq('program_block_id', input.programBlockId);
+    const [remoteResult, pending] = await Promise.all([
+      supabase
+        .from('progression_rows')
+        .select(
+          'id,user_id,program_block_id,week,day,exercise_id,target_sets,target_reps,target_load,target_rpe,notes,created_at,client_updated_at,version',
+        )
+        .eq('user_id', input.userId)
+        .eq('program_block_id', input.programBlockId),
+      db.syncMutations
+        .where('userId')
+        .equals(input.userId)
+        .and((m) => m.tableName === 'progression_rows')
+        .toArray(),
+    ]);
 
-    if (data) {
-      await db.progressionRows.bulkPut(data.map(rowToPr));
+    if (remoteResult.data) {
+      const pendingIds = new Set(pending.map((item) => item.recordId));
+      for (const row of remoteResult.data) {
+        const local = await db.progressionRows.get(row.id);
+        if (
+          shouldApplyRemoteRecord({
+            hasPendingEdits: pendingIds.has(row.id),
+            localClientUpdatedAt: local?.clientUpdatedAt,
+            remoteClientUpdatedAt: row.client_updated_at,
+          })
+        ) {
+          await db.progressionRows.put(rowToPr(row));
+        }
+      }
     }
   }
 
@@ -175,10 +208,7 @@ export async function listProgressionRows(input: {
 }
 
 export async function createProgressionRow(
-  input: Omit<
-    ProgressionRow,
-    'id' | 'createdAt' | 'clientUpdatedAt' | 'deletedAt'
-  >,
+  input: Omit<ProgressionRow, 'id' | 'createdAt' | 'clientUpdatedAt' | 'deletedAt' | 'version'>,
 ): Promise<ProgressionRow> {
   const now = new Date().toISOString();
   const row: ProgressionRow = {
@@ -186,6 +216,7 @@ export async function createProgressionRow(
     id: crypto.randomUUID(),
     createdAt: now,
     clientUpdatedAt: now,
+    version: 1,
   };
 
   await db.progressionRows.put(row);
@@ -213,6 +244,7 @@ export async function updateProgressionRow(
     ...existing,
     ...input,
     clientUpdatedAt: now,
+    version: existing.version + 1,
   };
 
   await db.progressionRows.put(updated);
@@ -227,7 +259,12 @@ export async function updateProgressionRow(
 
 export async function deleteProgressionRow(input: { userId: string; id: string }): Promise<void> {
   const now = new Date().toISOString();
-  await db.progressionRows.update(input.id, { deletedAt: now, clientUpdatedAt: now });
+  const existing = await db.progressionRows.get(input.id);
+  await db.progressionRows.update(input.id, {
+    deletedAt: now,
+    clientUpdatedAt: now,
+    version: (existing?.version ?? 0) + 1,
+  });
   await enqueueMutation({
     userId: input.userId,
     tableName: 'progression_rows',
@@ -237,7 +274,10 @@ export async function deleteProgressionRow(input: { userId: string; id: string }
   });
 }
 
-export async function listProgressionActuals(userId: string, progressionRowIds: string[]): Promise<ProgressionActual[]> {
+export async function listProgressionActuals(
+  userId: string,
+  progressionRowIds: string[],
+): Promise<ProgressionActual[]> {
   if (progressionRowIds.length === 0) {
     return [];
   }
@@ -246,13 +286,16 @@ export async function listProgressionActuals(userId: string, progressionRowIds: 
   return records.filter((item) => item.userId === userId && !item.deletedAt);
 }
 
-export async function addProgressionActual(input: Omit<ProgressionActual, 'id' | 'createdAt' | 'clientUpdatedAt' | 'deletedAt'>): Promise<ProgressionActual> {
+export async function addProgressionActual(
+  input: Omit<ProgressionActual, 'id' | 'createdAt' | 'clientUpdatedAt' | 'deletedAt' | 'version'>,
+): Promise<ProgressionActual> {
   const now = new Date().toISOString();
   const actual: ProgressionActual = {
     ...input,
     id: crypto.randomUUID(),
     createdAt: now,
     clientUpdatedAt: now,
+    version: 1,
   };
 
   await db.progressionActuals.put(actual);

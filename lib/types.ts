@@ -16,6 +16,7 @@ export interface WorkoutSessionDraft {
   status: 'draft' | 'completed';
   updatedAt: string;
   clientUpdatedAt: string;
+  version: number;
 }
 
 export type SetType = 'warmup' | 'working' | 'drop' | 'failure';
@@ -30,6 +31,7 @@ export interface WorkoutExerciseDraft {
   restSeconds?: number;
   updatedAt: string;
   clientUpdatedAt: string;
+  version: number;
 }
 
 export interface SetEntryDraft {
@@ -43,8 +45,12 @@ export interface SetEntryDraft {
   rir?: number;
   isCompleted: boolean;
   createdAt: string;
+  updatedAt: string;
   clientUpdatedAt: string;
+  version: number;
 }
+
+export type SyncMutationStatus = 'queued' | 'failed' | 'auth_required' | 'permission_denied';
 
 export interface SyncMutation {
   id: string;
@@ -52,10 +58,31 @@ export interface SyncMutation {
   tableName: string;
   operation: 'upsert' | 'delete';
   payload: JsonValue;
+  recordId: string;
+  orderingKey: number;
+  transactionGroup: string;
   attempts: number;
   nextAttemptAt: string;
   createdAt: string;
+  lastAttemptAt?: string;
   idempotencyKey: string;
+  status: SyncMutationStatus;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+}
+
+export interface SyncLogEvent {
+  id: string;
+  userId: string;
+  createdAt: string;
+  level: 'info' | 'warn' | 'error';
+  event: string;
+  details?: string;
+}
+
+export interface SyncState {
+  userId: string;
+  lastSyncAt?: string;
 }
 
 export interface Exercise {
@@ -102,6 +129,7 @@ export interface ProgramBlock {
   name: string;
   createdAt: string;
   clientUpdatedAt: string;
+  version: number;
   deletedAt?: string;
 }
 
@@ -119,6 +147,7 @@ export interface ProgressionRow {
   notes?: string;
   createdAt: string;
   clientUpdatedAt: string;
+  version: number;
   deletedAt?: string;
 }
 
@@ -133,6 +162,7 @@ export interface ProgressionActual {
   notes?: string;
   createdAt: string;
   clientUpdatedAt: string;
+  version: number;
   deletedAt?: string;
 }
 
