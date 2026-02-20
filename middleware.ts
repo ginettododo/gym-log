@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next({
+  let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
@@ -22,9 +22,14 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value;
         },
         set(name: string, value: string, options: Record<string, unknown>) {
+          // Update request cookies so route handlers see the refreshed session.
+          request.cookies.set(name, value);
+          response = NextResponse.next({ request: { headers: request.headers } });
           response.cookies.set({ name, value, ...options });
         },
         remove(name: string, options: Record<string, unknown>) {
+          request.cookies.set(name, '');
+          response = NextResponse.next({ request: { headers: request.headers } });
           response.cookies.set({ name, value: '', ...options, maxAge: 0 });
         },
       },
